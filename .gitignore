@@ -1,0 +1,7 @@
+*.dll
+*.o
+*.exe
+*.nes
+
+/.vscode
+/tests

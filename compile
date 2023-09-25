@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+gcc -o nes nes.c devices/display.c debug/pattern_table.c processing/palette.c processing/apu.c devices/controller.c debug/debug.c debug/debug_panel.c memory/mapper.c processing/cpu.c processing/ppu.c memory/mem.c memory/ram.c memory/rom.c memory/vram.c -lSDL2 -lSDL2main -lSDL2_ttf

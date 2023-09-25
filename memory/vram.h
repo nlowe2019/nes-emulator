@@ -1,0 +1,1 @@
+extern unsigned char vram[0x3fff];
