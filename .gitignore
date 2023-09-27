@@ -3,5 +3,24 @@
 *.exe
 *.nes
 
-/.vscode
-/tests
+CMakeLists.txt.user
+CMakeCache.txt
+CMakeFiles
+CMakeScripts
+Testing
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps
+
+.vscode
+SDL2*
+ROMS/Games/*
+ROMS/Tests/*
+compile.txt
+TC-*
+NES
+NESConfig.h
+log.txt
