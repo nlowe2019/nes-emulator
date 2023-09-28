@@ -28,3 +28,10 @@ Debug:
 Pause = 'P'
 Show Memory = '='
 Show Nametable Overlay = '-'
+
+
+TODO:
+nametable debug
+scrolling
+sound
+mappers

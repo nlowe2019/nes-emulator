@@ -19,7 +19,7 @@ memory_mapper* create_mapper(uint8_t* rom_data, int mapper_type, int prg_length,
 
     mapper->prg_ram_bank = 0;
     mapper->prg_bank_0 = 0;
-    mapper->prg_bank_1 = 1;
+    mapper->prg_bank_1 = 1; 
 
     mapper->mirroring = mirroring;
 
@@ -76,6 +76,7 @@ void mapper_write_1(uint16_t addr, uint8_t data, memory_mapper* mapper) {
             if(addr <= 0x9fff) {
                 mapper->registers[CTRL] = mapper->registers[SHIFT];
                 mapper->mirroring = mapper->registers[CTRL] & 0b11;
+                // 0 = one screen low / 1 = one screen high / 2 = vertical / 3 = horizontal
             }
             else if(addr <= 0xbfff) {
                 mapper->registers[CHR_0] = mapper->registers[SHIFT];

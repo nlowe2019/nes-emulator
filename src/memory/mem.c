@@ -102,6 +102,20 @@ unsigned char read_vram(uint16_t addr) {
         return mapper->rom_data[HEADER_SIZE + ((mapper->prg_ram_length) * 0x4000) + (mapper->chr_bank_1 * 0x1000) + (addr - 0x1000)];
     }
     else if(addr < 0x3f00) {
+
+        if(mapper->mirroring == 3)  // horizontal
+        {
+            if(addr >= 0x2400 && addr < 0x2c00)
+                addr -= 0x400;
+            else if(addr >= 0x2c00 && addr < 0x2fff)
+                addr -= 0x800;
+        }
+        else if(mapper->mirroring == 2)  // vertical
+        {
+            if(addr >= 0x2800 && addr < 0x3000)
+                addr -= 0x800;
+        }
+
         return vram[addr];
     }
     else if(addr < 0x4000) {
@@ -118,8 +132,21 @@ void write_vram(uint16_t addr, uint8_t data) {
     if(addr < 0x2000 && mapper->chr_length == 0) {
         mapper->chr_ram[addr] = data;
     }
-
     else if(addr < 0x3f00) {
+
+        if(mapper->mirroring == 3)  // horizontal
+        {
+            if(addr >= 0x2400 && addr < 0x2c00)
+                addr -= 0x400;
+            else if(addr >= 0x2c00 && addr < 0x2fff)
+                addr -= 0x800;
+        }
+        else if(mapper->mirroring == 2)  // vertical
+        {
+            if(addr >= 0x2800 && addr < 0x3000)
+                addr -= 0x800;
+        }
+        
         vram[addr] = data;
     }
     else if(addr < 0x4000) {
@@ -137,34 +164,37 @@ unsigned char peek_vram(uint16_t addr) {
 
     addr %= 0x4000;
 
-    if(addr < 0x2000 && mapper->chr_length == 0) {
+    if(addr < 0x2000 && mapper->chr_length == 0)  // chr ram
+    {
         return mapper->chr_ram[addr];
     }
-    
-    if(addr < 0x1000) {
+    if(addr < 0x1000)  // chr rom 0
+    {
         return mapper->rom_data[HEADER_SIZE + ((mapper->prg_length) * 0x4000) + (mapper->chr_bank_0 * 0x1000) + (addr)];
     }
-    else if(addr < 0x2000) {
+    else if(addr < 0x2000)  // chr rom 1
+    {
         return mapper->rom_data[HEADER_SIZE + ((mapper->prg_length) * 0x4000) + (mapper->chr_bank_1 * 0x1000) + (addr - 0x1000)];
     }
-    else if(addr < 0x3000) {
-
-        addr -= 0x2000;
-        if(mapper->mirroring == 0) {
-        int table = 0;
-            table = addr / 0x800;
-            addr = (table * 0x800) + (addr % 0x400);
+    else if(addr < 0x3f00)  // name tables w/ mirroring
+    {
+        if(mapper->mirroring == 3)  // horizontal
+        {
+            if(addr >= 0x2400 && addr < 0x2c00)
+                addr -= 0x400;
+            else if(addr >= 0x2c00 && addr < 0x2fff)
+                addr -= 0x800;
         }
-        if(mapper->mirroring == 1) {
-            addr = addr % 0x800;
+        else if(mapper->mirroring == 2)  // vertical
+        {
+            if(addr >= 0x2800 && addr < 0x3000)
+                addr -= 0x800;
         }
 
-        return vram[0x2000 + addr];
-    }
-    else if(addr < 0x3f00) {
         return vram[addr];
     }
-    else if(addr < 0x4000) {
+    else if(addr < 0x4000)  // color palettes
+    {
         addr = addr % 0x20;
         return vram[addr + 0x3f00];
     }

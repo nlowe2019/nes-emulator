@@ -36,7 +36,7 @@ void init_tables() {
     }
 }
 
-void fetch_table(int table) {
+void fetch_pattern_table(int table) {
 
     int table_addr = (table == 1 ? 0x1000 : 0x0000);
     uint32_t* table_pointer;

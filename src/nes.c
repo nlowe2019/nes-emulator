@@ -110,9 +110,9 @@ int main(int argc, char *argv[]) {
                 if(event.key.keysym.scancode == SDL_SCANCODE_EQUALS) {
                     debug_on = !debug_on;
                     if(debug_on)
-                        WIDTH += (2 * 214) + 128;
+                        WIDTH += (2 * 214) + 128 + 512;
                     else
-                        WIDTH -= (2 * 214) + 128;
+                        WIDTH -= (2 * 214) + 128 + 512;
                     SDL_SetWindowSize(window, WIDTH, HEIGHT);
                 }
                 if(event.key.keysym.scancode == SDL_SCANCODE_MINUS) {

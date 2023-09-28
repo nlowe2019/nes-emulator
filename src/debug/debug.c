@@ -8,6 +8,7 @@
 
 #include "debug.h"
 #include "pattern_table.h"
+#include "name_table.h"
 
 int panel_num = 3;
 Panel* panels[4];
@@ -31,8 +32,15 @@ bool Init_Debug(int WIDTH, int HEIGHT) {
     panels[2] = Create_Panel("REG", 0, 0, 214, HEIGHT/2, 0, 9);
 
     init_tables();
-    fetch_table(0);
-    fetch_table(1);
+    init_name_tables();
+
+    fetch_pattern_table(0);
+    fetch_pattern_table(1);
+
+    fetch_name_table(0);
+    fetch_name_table(1);
+    fetch_name_table(2);
+    fetch_name_table(3);
 
     return true;
 }
@@ -54,15 +62,25 @@ void Update_Debug(SDL_Renderer* renderer) {
             Render_Panel(renderer, panels[i]);
         }
 
-        Update_Pattern_Tables(renderer);
+        update_pattern_tables(renderer);
         render_pattern_tables(renderer);
+        update_name_tables(renderer);
+        create_name_table_textures(renderer);
     }
 }
 
-void Update_Pattern_Tables(SDL_Renderer* renderer) {
+void update_pattern_tables(SDL_Renderer* renderer) {
 
-    fetch_table(0);
-    fetch_table(1);
+    fetch_pattern_table(0);
+    fetch_pattern_table(1);
+}
+
+void update_name_tables(SDL_Renderer* renderer) {
+
+    fetch_name_table(0);
+    fetch_name_table(1);
+    fetch_name_table(2);
+    fetch_name_table(3);
 }
 
 // SDL event

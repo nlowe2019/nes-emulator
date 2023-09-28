@@ -12,7 +12,8 @@ extern bool next_instruction;
 bool Init_Debug(int WIDTH, int HEIGHT);
 void Shut_Down_Debug();
 void Update_Debug(SDL_Renderer *renderer); 
-void Update_Pattern_Tables(SDL_Renderer* renderer);
+void update_pattern_tables(SDL_Renderer* renderer);
+void update_name_tables(SDL_Renderer* renderer);
 
 void Debug_Scroll(SDL_Event event_wheel_y);
 void Debug_Mouse_Down(SDL_Event event_click);
