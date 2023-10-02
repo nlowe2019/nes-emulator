@@ -67,369 +67,294 @@ const int PPUSCROLL = 0x0005; //xxxx xxxx | fine scroll position (two writes x, 
 const int PPUADDR = 0x0006; //aaaa aaaa | PPU read/write address (two writes, high nibble, low nibble)
 const int PPUDATA = 0x0007; //dddd dddd | PPU data read/write
 
+uint32_t frame_buffer[240][256]; 
 uint8_t ppu_reg[0x8];
+
+uint16_t temp_ppu_address;
+uint16_t ppu_address;
+/*
+yyy NN YYYYY XXXXX
+||| || ||||| +++++-- coarse X scroll
+||| || +++++-------- coarse Y scroll
+||| ++-------------- nametable select
++++----------------- fine Y scroll
+*/
+uint8_t fine_x_scoll;
+uint8_t buffer_data;
+int latch = 0;
+
 uint8_t OAM_memory[0x100];
 uint8_t OAM_memory_secondary[0x40];
+uint8_t sprite_patterns_lower[8];
+uint8_t sprite_patterns_upper[8];
+uint8_t sprite_attributes[8];
+int sprite_counters[8];
 
-uint32_t frame_buffer[240][256]; 
-uint8_t data_buffer = 0;
-
-uint16_t ppu_address_temp;  // 't' register
-uint16_t ppu_address;  // 'v' register
-uint8_t fine_x = 0;   // 'x' register
-
-int rendering_enabled = 0;
-
-int frame = 0;
+enum PPU_STATE ppu_state = PRE_RENDER;
 int scanline = -1;
 int dot = 0;
-int latch = 0;  // 'w register'
-int NMI = 0;
 
-uint8_t sprite_priority[240][256];
+int generate_nmi = 0;
+int sprite_0_loaded = 0;
 
-int render_s0 = 0;
+void ppu_update()
+{
+    switch (ppu_state)
+    {
+        case PRE_RENDER: // line -1/261
+            if(dot == 1)
+                ppu_reg[PPUSTATUS] &= ~(V_BLANK_BIT | S0_HIT_BIT | SPRITE_OVERFLOW_BIT);
+            if(dot >= 280 && dot <= 304)
+                copy_vertical();
+            if(dot == 256)
+                increment_vertical();
+            if((dot == 328 || dot == 336 || (dot >= 8 && dot <= 256)) && (dot%8) == 0 )
+                increment_horizontal();
+            if(dot == 257)
+                copy_horizontal(); 
+            if(dot >= 257 && dot <= 320)
+                ppu_reg[OAMADDR] = 0;
+            break;
 
-void Update_PPU() {
-
-    if(scanline == -1) {
-
-        //idle
-    }
-    else if(scanline < 240) {
-
-        // visible scanlines
-        Draw_Scanline();
-    }
-    else if(scanline == 240) {
-
-        // idle
-    }
-    else if(scanline < 261) { 
-
-        // post-render scanlines
-        if(scanline == 241 && dot == 1) {
-            // VBlank period begins
-            ppu_reg[PPUSTATUS] |= V_BLANK_BIT; 
-        }
-        if(scanline == 241 && dot == 1) {
-            // active NMI (non maskable interrupt)
-            if(ppu_reg[PPUCTRL] & NMI_BIT) {
-                NMI = 1;
+        case VISIBLE_FRAME: // line 0 - 240
+            if(dot == 1)
+                fetch_sprite_data();
+            if(dot == 64)
+                clear_OAM();
+            if(dot == 256)
+                increment_vertical();
+            if((dot == 328 || dot == 336 || (dot >= 8 && dot <= 256)) && (dot%8) == 0 )
+                increment_horizontal();
+            if(dot == 257)
+            {
+                copy_horizontal(); 
+                sprite_evaluation();
             }
-        }
-    }
-    else {
+            if(dot >= 257 && dot <= 320)
+                ppu_reg[OAMADDR] = 0;
+            if(dot < 256 && (dot % 8) == 1)
+                draw_name_table_byte();
+            if(dot < 256)
+                draw_sprites();
+            break; 
 
-        // pre-render line, switch off status flags
-        if(dot == 1) {
-            render_s0 = 0;
-            ppu_reg[PPUSTATUS] &= ~S0_HIT_BIT;
-            ppu_reg[PPUSTATUS] &= ~SPRITE_OVERFLOW_BIT;
-            ppu_reg[PPUSTATUS] &= ~V_BLANK_BIT;
-        }
-        if(((dot > 0 && dot <= 256)/* || dot >= 328 */) && dot%8 == 0) {
-            increment_hori();
-        }
-        if(dot == 256) {
-            increment_vert();
-        }
-        if(dot == 257) {
-            copy_hori();
-        }
-        if(dot >= 280 && dot <= 304) {
-            copy_vert();
-        }
-        if(dot == 339) { 
-            // ensures NMI is disabled
-            NMI = 0;
-
-            // on odd frames, first dot is skipped
-            if(frame % 2 == 1) {
-
-                dot = 0;
-                scanline = 0;
-            } 
-        }
+        case POST_RENDER: // line 241 - 260
+            if(scanline == 241 && dot == 1)
+            {
+                ppu_reg[PPUSTATUS] |= V_BLANK_BIT; 
+                if(ppu_reg[PPUCTRL] & NMI_BIT)
+                    generate_nmi = 1;
+            }
+            break; 
     }
 
-    dot++;
-    if(dot > 340) {
+    dot = (dot > 339) ? 0 : dot + 1;
+    if(dot == 0)
+        scanline = (scanline > 260) ? 0 : scanline + 1;
+    if(scanline == 0)
+        ppu_state = PRE_RENDER;
+    else if(scanline < 240)
+        ppu_state = VISIBLE_FRAME;
+    else
+        ppu_state = POST_RENDER;
 
-        scanline++;
-        //end of frame
-        if(scanline > 261) {
-            frame++;
-            scanline = 0;
-        }
-        dot = 0;
-    }
-
-    //if(scanline == 0 && dot == 100)
-    //    dump_OAM();
-    /*if(scanline == 30) {
-        ppu_reg[PPUSTATUS] |= S0_HIT_BIT;
-    } else {
-        ppu_reg[PPUSTATUS] &= 0xbf;
-    }*/
 }
 
-uint8_t read_ppu(uint16_t addr) {
-
-    uint8_t return_data;
-
-    switch(addr) {
-
-        case 0x00:
-            return ppu_reg[PPUADDR];
-            break;
-
-        case 0x01:
-            return ppu_reg[PPUMASK];
-            break;
-
-        case 0x02:
-            return_data = ppu_reg[PPUSTATUS];
-
-            ppu_reg[PPUSTATUS] &= ~V_BLANK_BIT; // VERT BLANK BIT CLEARED AFTER $2002 READ
+uint8_t ppu_read(uint16_t reg_num)
+{
+    uint8_t buffer_return;
+    switch (reg_num)
+    {
+        case 2: // STATUS
+            ppu_reg[PPUSTATUS] &= ~V_BLANK_BIT;
             latch = 0;
-
-            return return_data;
             break;
 
-        case 0x03:
-            return ppu_reg[OAMADDR];
+        case 4: // OAMDATA
+            return ppu_reg[OAMDATA];
             break;
 
-        case 0x04:
-            if(dot < 65 && scanline < 240)
-                return 0xff;
-            return OAM_memory[ppu_reg[OAMADDR]];
-            break;
-
-        case 0x05:
-            return ppu_reg[PPUSCROLL];
-            break;
-
-        case 0x06: 
-            return ppu_reg[PPUADDR];
-            break;
-
-        case 0x07:
-                
-            return_data = data_buffer;
-            data_buffer = read_vram(ppu_address);
-
+        case 7: // DATA
+            buffer_return = buffer_data;
+            buffer_data = read_vram(ppu_address);
             int increment = (ppu_reg[PPUCTRL]) & ADDR_INCREMENT_BIT ? 32 : 1;
             ppu_address += increment;
             ppu_reg[PPUADDR] += increment;
 
             if(ppu_address >= 0x3f00) {
-                data_buffer = read_vram(ppu_address - 0x1000);
+                buffer_data = read_vram(ppu_address - 0x1000);
                 return read_vram(ppu_address);
             }
-
-            return return_data;
+            return buffer_return; 
+            break;
+        
+        default:
             break;
     }
-    return 0;
 }
 
-void write_ppu(uint16_t addr, uint8_t data) {
+void ppu_write(uint16_t reg_num, uint8_t data)
+{
+    switch (reg_num)
+    {
+        case 0: // CTRL
+            temp_ppu_address &= ~(0b11 << 10);
+            temp_ppu_address |= ((data & 0b11) << 10);
 
-    switch(addr) {
-
-        case 0x00:
+            latch = 0;
             ppu_reg[PPUCTRL] = data;
-            ppu_address_temp &= 0b1110011111111111;
-            ppu_address_temp |= ((data & 0b11) << 11);
             break;
 
-        case 0x01:
+        case 1: // MASK
+
             ppu_reg[PPUMASK] = data;
-            if((data & 0x10) || (data & 0x08))
-                rendering_enabled = 1;
-            else
-                rendering_enabled = 0;
             break;
 
-        case 0x02:
-            ppu_reg[PPUSTATUS] = data;
-            break;
-
-        case 0x03:
+        case 3: // OMA ADDR
             ppu_reg[OAMADDR] = data;
             break;
 
-        case 0x04:
-            if(scanline < 262) {
-                OAM_memory[ppu_reg[OAMADDR]] = data;
-                //printf("Writing %02x to OAM addr: %02x\n", data, ppu_reg[OAMADDR]);
-                ppu_reg[OAMADDR]++;
-                ppu_reg[OAMADDR] &= 0xff;
-            }
+        case 4: // OMA DATA
+            ppu_reg[OAMDATA] = data;
+            ppu_reg[OAMADDR]++;
             break;
 
-        case 0x05:
-            if(latch == 0) {
-                fine_x = data & 0b111;
-                ppu_address_temp &= ~0b11111;
-                ppu_address_temp |= (data >> 3);
-                latch = 1;
+        case 5: // SCROLL
+            if(!latch)
+            {
+                temp_ppu_address &= ~(0b11111);
+                temp_ppu_address |= (data & 0b11111);
+                fine_x_scoll = (data & 0b111);
             }
-            else {
-                ppu_address_temp &= 0b000110000011111;
-                ppu_address_temp |= ((data & 0b111) << 12);
-                ppu_address_temp |= (((data & 0b11111000) >> 3) << 5);
-                latch = 0;
+            else
+            {
+                temp_ppu_address &= ~(0b11111 << 5);
+                temp_ppu_address |= ((data & 0b11111) << 5);
+                temp_ppu_address &= ~(0b111 << 12);
+                temp_ppu_address |= ((data & 0b111) << 12);
             }
+            latch = !latch;
+            ppu_reg[PPUSCROLL] = data;
             break;
 
-        case 0x06:
-            if(latch == 0) {
-                ppu_address_temp &= ~0b111111100000000;
-                ppu_address_temp |= ((data & 0b111111) << 8);
-                latch = 1;
-            } else {
-                ppu_address_temp &= 0xff00;
-                ppu_address_temp |= (data & 0xff);
-                ppu_address = ppu_address_temp;
-                latch = 0;
+        case 6: // ADDR
+            if(!latch)
+            {
+                temp_ppu_address &= ~(0b111111);
+                temp_ppu_address |= (data & 0b111111) << 8;
+                temp_ppu_address &= ~(1 << 14);
             }
-            //printf("\nppu_addr: %04x\n\n", ppu_address);
+            else
+            {
+                temp_ppu_address &= ~(0b11111111);
+                temp_ppu_address |= (data & 0b11111111);
+                ppu_address = temp_ppu_address;
+            }
+            latch = !latch;
+            ppu_reg[PPUADDR] = data;
             break;
 
-        case 0x07: 
-            if(1/*(ppu_reg[PPUSTATUS] & V_BLANK_BIT) || !((ppu_reg[PPUMASK] & SHOW_BG_BIT) || (ppu_reg[PPUMASK] & SHOW_SPRITES_BIT))*/) { //unsure on logic, commented code created problems
-                write_vram(ppu_address, data);
-                //printf("\nWriting %02x to addr: %04x\n\n", data, ppu_address);
-                    
-                int increment = (ppu_reg[PPUCTRL]) & ADDR_INCREMENT_BIT ? 32 : 1;
-                ppu_address += increment;
-                ppu_reg[PPUADDR] += increment;
-            }
+        case 7: // DATA
+
+            ppu_reg[PPUDATA] = data;
+            ppu_address += (ppu_reg[PPUCTRL] & ADDR_INCREMENT_BIT) ? 32 : 1;
+            break;
+
+        case 14: // OMA_DMA
+            OAM_DMA(data);
+            break;
+
+        default:
             break;
     }
 }
 
-void Draw_Scanline() {
-
-    if(dot == 1) {
-        clear_OAM();
+void increment_vertical() 
+{
+    if ((ppu_address & 0x7000) != 0x7000)             // if fine Y < 7
+    {
+        ppu_address += 0x1000;                        // increment fine Y
     }
-    else if(dot == 65) {
-        sprite_eval();
-        //dump_OAM_secondary();
-    }
-
-    if(((dot > 0 && dot <= 256))&& dot%8 == 0) {
-        increment_hori();
-    }
-
-    if(dot%8 == 1 && dot < 255) {
-        if(ppu_reg[PPUMASK] & SHOW_BG_BIT) {
-            Draw_Nametable();
+    else
+    {
+        ppu_address &= ~0x7000;                       // fine Y = 0
+        int y = (ppu_address & 0x03E0) >> 5;          // let y = coarse Y
+        if (y == 29)
+        {
+            y = 0;                                    // coarse Y = 0
+            ppu_address ^= 0x0800;                    // switch vertical nametable
         }
-    }
-    if(dot == 255) {
-        if(ppu_reg[PPUMASK] & SHOW_SPRITES_BIT && scanline < 239) {
-            Draw_Sprites();
+        else if (y == 31)
+        {
+            y = 0;                                    // coarse Y = 0, nametable not switched
         }
-    }
-    if(dot == 256) {
-        increment_vert();
-    }
-    if(dot == 257) {
-        copy_hori();
+        else
+        {
+            y += 1;                                   // increment coarse Y
+        }
+        ppu_address = (ppu_address & ~0x03E0) | (y << 5);    // put coarse Y back into v
     }
 }
 
-void Draw_Sprites() {
-    
-    uint8_t sprite_y;
-    uint8_t pattern_index;
-    uint8_t attributes;
-    uint8_t sprite_x;
-    uint8_t sprite_lower;
-    uint8_t sprite_upper;
-    SDL_Color color;
+void increment_horizontal()
+{
+    if ((ppu_address & 0x001F) == 31)    // if coarse X == 31
+    {
+        ppu_address &= ~0x001F;          // coarse X = 0
+        ppu_address ^= 0x0400;           // switch horizontal nametable
+    }
+    else
+    {
+        ppu_address += 1;                // increment coarse X
+    }
+}
 
-    for(int sprite_num = 0; sprite_num < 32; sprite_num+=4) {
+void copy_vertical()
+{
+    uint16_t vertical_mask = 0b111101111100000;
+    ppu_address &= ~vertical_mask;
+    ppu_address |= (temp_ppu_address & vertical_mask);
+}
 
-        sprite_y = OAM_memory_secondary[sprite_num];
-        pattern_index = OAM_memory_secondary[sprite_num+1];
-        attributes = OAM_memory_secondary[sprite_num+2];
-        sprite_x = OAM_memory_secondary[sprite_num+3];
+void copy_horizontal()
+{
+    uint16_t name_table_select = temp_ppu_address & (1 << 10);
+    uint16_t coarse_x = temp_ppu_address & 0b11111;
+    ppu_address &= ~0b10000011111;
+    ppu_address |= coarse_x;
+    ppu_address |= name_table_select;
 
-        int pattern_table_addr;
-        if(ppu_reg[PPUCTRL] & SPRITE_HEIGHT_BIT) {  // 8x16 sprites
+}
 
-            pattern_table_addr = pattern_index & 0x1 ? 0x1000 : 0x0000;
-            int sprite_row = scanline+1 - sprite_y;
+void OAM_DMA(uint8_t data)
+{
+    uint16_t ram_addr = 0x100 * data;
+    uint8_t oam_addr = ppu_reg[OAMADDR];
 
-            if(attributes & 0b10000000) { 
-                sprite_row = sprite_row % 8;
-                sprite_row = 7 - sprite_row;
-                if(scanline+1 - sprite_y < 8) {
-                    sprite_row += 16;
-                }
-            }
-            sprite_lower = read_vram((0x10 * pattern_index) + pattern_table_addr + sprite_row);
-            sprite_upper = read_vram((0x10 * pattern_index) + pattern_table_addr  + 8 + sprite_row);
-        }
-        else {  // 8x8 sprites
+    for(int i = 0; oam_addr + i < 256; i++) {
+        //printf("Writing %02x to OAM[0x%02x]\n", read(ram_addr + i), oam_addr + i);
+        OAM_memory[oam_addr + i] = read(ram_addr + i);
+    }
+}
 
-            pattern_table_addr = (ppu_reg[PPUCTRL] & SPRITE_PATTERN_TABLE_BIT) ? 0x1000 : 0x0000;
-            int sprite_row = scanline+1 - sprite_y;
-            if(attributes & 0b10000000) {
-                sprite_row = 7 - sprite_row;
-            }
-            sprite_lower = read_vram((0x10 * pattern_index) + pattern_table_addr + sprite_row);
-            sprite_upper = read_vram((0x10 * pattern_index) + pattern_table_addr  + 8 + sprite_row);
-        }
-
-        int palette_id = attributes & 0b11;
-        uint16_t palette_addr = 0x3f00 + 0x10 + (4 * palette_id);
-
-        //if(sprite_x != 255)
-        //    printf("sprite index = oam2[%d]: %d, addr:%04x, row: %d\n", sprite_num, pattern_index, (0x1 * pattern_index) + pattern_table_addr + sprite_row, sprite_row);
-        if(sprite_y > 0 && sprite_y < 0xf0) {
-            for(int pixel = 0; pixel < 8; pixel++) {
-
-                uint8_t val; 
-                if(attributes & 0b01000000) {
-                    val = (sprite_lower >> (pixel)) & 0b1;
-                    val += ((sprite_upper >> (pixel)) & 0b1) << 1;
-                }
-                else {
-                    val = (sprite_lower >> (7-pixel)) & 0b1;
-                    val += ((sprite_upper >> (7-pixel)) & 0b1) << 1;
-                }
-
-                color = palette[read_vram(palette_addr + val)];
-                
-                if(sprite_x + pixel < 0xff && sprite_y < 0xff) {
-                    if(sprite_priority[scanline+1][sprite_x+pixel] == 0) {
-                        frame_buffer[scanline+1][sprite_x+pixel] = 0xff000000 + (color.r << 16);
-                        frame_buffer[scanline+1][sprite_x+pixel] += (color.g << 8);
-                        frame_buffer[scanline+1][sprite_x+pixel] += (color.b);
-                    }
-                }
-
-                if(!(attributes & 0b00100000) && val > 0 || sprite_priority[scanline+1][sprite_x+pixel] == 1)
-                    sprite_priority[scanline+1][sprite_x+pixel] = 1;
-                else if ((attributes & 0b00100000) && val > 0) {
-                    sprite_priority[scanline+1][sprite_x+pixel] = 2;
-                }
-                else
-                    sprite_priority[scanline+1][sprite_x+pixel] = 0;
-            }
+void clear_frame_buffer() 
+{
+    for (int i = 0; i < 256; i++) {
+        for (int j = 0; j< 240; j++) {
+            frame_buffer[j][i] = 0;
         }
     }
 }
 
-void Draw_Nametable() {
+void clear_OAM(void)
+{
+    for(int i = 0; i < 64; i++) {
+        OAM_memory_secondary[i] = 0xff;
+    }
+}
 
+void draw_name_table_byte()
+{
     SDL_Color color;
 
     /*
@@ -479,149 +404,149 @@ void Draw_Nametable() {
         else
             color = palette[read_vram(palette_addr + value)];
 
-        if(sprite_priority[scanline][section+i] == 0 || (sprite_priority[scanline][section+i] == 2 && value > 0)) {
+        if(value > 0) {
             frame_buffer[scanline][section+i] = 0xff000000 + (color.r << 16);
             frame_buffer[scanline][section+i] += (color.g << 8);
             frame_buffer[scanline][section+i] += (color.b);
         }
-        else {
-            if(value > 0 && !(ppu_reg[PPUSTATUS] & S0_HIT_BIT) && render_s0) {
-                //printf("SPRITE 0 HIT at frame [%d] line [%d]\n", frame, scanline);
-                ppu_reg[PPUSTATUS] |= S0_HIT_BIT; 
-            }
-        }
     }
 }
 
-void OAM_DMA(uint8_t data) {
+/*
+cycle through each sprite in primary oam memory.
+if y co-ordinate puts sprite on next scanline, add to oam secondary
+*/
+void sprite_evaluation()
+{
+    int n = 0; // oam secondary index
+    int oam_size = 256;
 
-    uint16_t ram_addr = 0x100 * data;
-    uint8_t oam_addr = ppu_reg[OAMADDR];
-
-    for(int i = 0; oam_addr + i < 256; i++) { 
-
-        //printf("Writing %02x to OAM[0x%02x]\n", read(ram_addr + i), oam_addr + i);
-        OAM_memory[oam_addr + i] = read(ram_addr + i);
-    }
-}
-
-void clear_OAM(void) {
-
-    for(int i = 0; i < 8*4; i++) {
-        OAM_memory_secondary[i] = 0xff;
-    }
-}
-
-void sprite_eval() {
-
-    int n = 0; 
-    for(int i = 0; i < 64; i++) {
-
+    for(int i = 0; i < sizeof(OAM_memory); i+=4) 
+    {
+        /*
+        sprite height, determined by CTRL register
+        */
         int height_offset = 7;
         if(ppu_reg[PPUCTRL] & SPRITE_HEIGHT_BIT)
             height_offset = 15;
-        
-        if((OAM_memory[i*4]) > 0 && (OAM_memory[i*4]-1) <= scanline && (OAM_memory[i*4]-1)+height_offset >= scanline && (OAM_memory[i*4]-1) < 240) {
 
-            if(n == 8) {
+        int sprite_y = OAM_memory[i];
+
+        if(sprite_y > 0 && sprite_y-1 <= scanline && sprite_y-1+height_offset >= scanline && sprite_y-1 < 240) {
+
+            if(n == 8)
+            {
                 ppu_reg[PPUSTATUS] |= SPRITE_OVERFLOW_BIT;
             }
-            else {
-                
-                if(i == 0 && !render_s0) {
-                    render_s0 = 1;
-                }
-
-                OAM_memory_secondary[(n*4)] = OAM_memory[(i*4)];
-                OAM_memory_secondary[(n*4) + 1] = OAM_memory[(i*4) + 1];
-                OAM_memory_secondary[(n*4) + 2] = OAM_memory[(i*4) + 2];
-                OAM_memory_secondary[(n*4) + 3] = OAM_memory[(i*4) + 3];
+            else
+            {
+                if(i == 0)
+                    sprite_0_loaded = 1;
+                OAM_memory_secondary[(n*4)] = OAM_memory[i];
+                OAM_memory_secondary[(n*4) + 1] = OAM_memory[i + 1];
+                OAM_memory_secondary[(n*4) + 2] = OAM_memory[i + 2];
+                OAM_memory_secondary[(n*4) + 3] = OAM_memory[i + 3];
                 n++;
             }
         }
+
     }
 }
 
-void clear_frame_buffer() {
-    for (int i = 0; i < 256; i++) {
-        for (int j = 0; j< 240; j++) {
-            frame_buffer[j][i] = 0;
-            sprite_priority[j][i] = 0;
-        }
+void fetch_sprite_data()
+{
+    for(int i = 0; i < 8; i++)
+    {
+        sprite_patterns_lower[i] = 0xff;
+        sprite_patterns_upper[i] = 0xff;
+        sprite_attributes[i] = 0xff;
+        sprite_counters[i] =-8;
     }
-}
 
-void dump_OAM() {
-    
-    printf("OAM MEMORY:\n");
-    for (int i = 0; i < 256; i+=4) {
-        printf("SPRITE[%d]   %02x %02x %02x %02x\n", i/4, OAM_memory[i+0], OAM_memory[i+1], OAM_memory[i+2], OAM_memory[i+3]);
-    }
-    printf("\n");
-}
+    // max 8 sprites per scanline
+    for(int i = 0; i < 8; i++)
+    {
+        if(OAM_memory_secondary[i*4] != 0xff)
+        {
+            int sprite_y = OAM_memory_secondary[i];
+            uint16_t sprite_pattern_index = OAM_memory_secondary[(i*4)+1];
+            sprite_attributes[i] = OAM_memory_secondary[i+2];
+            sprite_counters[i] = OAM_memory_secondary[i+3];
 
-void dump_OAM_secondary() {
-    
-    printf("SECONDARY OAM MEMORY:\n");
-    for (int i = 0; i < 64; i+=4) {
-        printf("SPRITE[%d]   %02x %02x %02x %02x\n", i/4, OAM_memory_secondary[i+0], OAM_memory_secondary[i+1], OAM_memory_secondary[i+2], OAM_memory_secondary[i+3]);
-    }
-    printf("\n");
-}
+            uint16_t chr_bank_addr;
+            int sprite_row = scanline+1 - sprite_y;
 
-void increment_hori() {
-    
-    if(rendering_enabled) {
-        if((ppu_address & 0x001f) == 31) {
-            ppu_address &= ~0x001f;
-            ppu_address ^= 0x0400;
-        } else {
-            ppu_address++;
-        }
-    }
-}
+            if(ppu_reg[PPUCTRL] & SPRITE_HEIGHT_BIT)   // 8x16 sprites
+            {
+                chr_bank_addr = sprite_pattern_index & 1 ? 0x1000 : 0x0000;
 
-void increment_vert() {
-
-    if(rendering_enabled) {
-        if((ppu_address & 0x7000) != 0x7000) {
-            ppu_address += 0x1000;
-        }
-        else {
-            ppu_address &= ~0x7000;
-            int y = (ppu_address & 0x03e0) >> 5;
-            if(y == 29) {
-                y = 0;
-                ppu_address ^= 0x0800;
+                if(sprite_attributes[i] & 0b10000000) { 
+                    sprite_row = sprite_row % 8;
+                    sprite_row = 7 - sprite_row;
+                    if(scanline+1 - sprite_y < 8) {
+                        sprite_row += 16;
+                    }
+                }
             }
-            else if(y == 31) {
-                y = 0;
+            else   // 8x8 sprites
+            {
+                chr_bank_addr = (ppu_reg[PPUCTRL] & SPRITE_PATTERN_TABLE_BIT) ? 0x1000 : 0x0000;
+                if(sprite_attributes[i] & 0b10000000) {
+                    sprite_row = 7 - sprite_row;
+                }
             }
-            else {
-                y++;
-            }
-
-            ppu_address = (ppu_address & ~0x03e0) | (y << 5);
+            sprite_patterns_lower[i] = read_vram((0x10 * sprite_pattern_index) + chr_bank_addr + sprite_row);
+            sprite_patterns_upper[i] = read_vram((0x10 * sprite_pattern_index) + chr_bank_addr + sprite_row + 8);
         }
     }
 }
 
-void copy_hori() {
+void draw_sprites()
+{
+    SDL_Color pixel_color;
 
-    if(rendering_enabled) {
-        uint16_t temp_copy = ppu_address_temp;
-        temp_copy &= 0b10000011111;
-        ppu_address &= ~0b000010000011111;
-        ppu_address |= temp_copy;
-    }
-}
+    for(int i = 0; i < 8; i++)
+    {
+        sprite_counters[i]--;
 
-void copy_vert() {
+        if(sprite_counters[i] <= 0 && sprite_counters[i] >= -7)
+        {
+            
+            int bit_position = abs(sprite_counters[i]);
+            if(sprite_attributes[i] & 0b01000000)
+                bit_position = 7 - bit_position;
 
-    if(rendering_enabled) {
-        uint16_t temp_copy = ppu_address_temp;
-        temp_copy &= 0b111101111100000;
-        ppu_address &= ~0b111101111100000;
-        ppu_address |= temp_copy;
+            int sprite_bit_low = 1 & (sprite_patterns_lower[i] >> bit_position);
+            int sprite_bit_upper = 1 & (sprite_patterns_upper[i] >> bit_position);
+            int pattern_bits = sprite_bit_low + (sprite_bit_upper << 1);
+
+            int palette_id = sprite_attributes[i] & 0b11;
+            uint16_t palette_addr = 0x3f00 + 0x10 + (4 * palette_id);
+            pixel_color = palette[read_vram(palette_addr + pattern_bits)];
+            
+            if(i == 0 && sprite_0_loaded)
+            {
+                int bg_transparent = 1;
+                SDL_Color transparent_pixel_color = palette[read_vram(0x3f00)];
+                uint32_t transparent_color_32 = 0xff000000; + (pixel_color.r << 16);
+                transparent_color_32 += (pixel_color.g << 8);
+                transparent_color_32 += (pixel_color.b);
+                if(frame_buffer[scanline][dot] != transparent_color_32)
+                    bg_transparent = 0;
+                if(!bg_transparent && pattern_bits > 0)
+                {
+                    ppu_reg[PPUSTATUS] |= S0_HIT_BIT;
+                    sprite_0_loaded = 0;
+                }
+            }
+
+            if(!(sprite_attributes[i] & 0b00100000))   // render behind background attribute
+            {    
+                frame_buffer[scanline][dot] = 0xff000000 + (pixel_color.r << 16);
+                frame_buffer[scanline][dot] += (pixel_color.g << 8);
+                frame_buffer[scanline][dot] += (pixel_color.b);
+            }
+            
+        }
     }
 }

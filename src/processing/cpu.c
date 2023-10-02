@@ -26,7 +26,7 @@ void Init_CPU() {
 
 int Update_CPU() {
 
-    if(NMI) {
+    if(generate_nmi) {
 
         status |= 0b00010000;
         StackPush(status);
@@ -35,7 +35,7 @@ int Update_CPU() {
 
         pc = read(0xfffa);
         pc += (read(0xfffb) << 8);
-        NMI = 0;
+        generate_nmi = 0;
     }
 
     uint8_t opcode = FetchInstruction();

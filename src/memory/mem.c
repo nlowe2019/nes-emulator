@@ -16,7 +16,7 @@ unsigned char read(uint16_t addr) {
 
     if(addr >= 0x2000 && addr < 0x4000) {
         addr = (addr-0x2000) % 8;
-        val = read_ppu(addr);
+        val = ppu_read(addr);
     }
     else if(addr == 0x4016 || addr == 0x4017) {
         val = controller_read(addr);
@@ -35,10 +35,10 @@ void write(uint16_t addr, uint8_t data) {
     
     if(addr >= 0x2000 && addr < 0x4000) {
         addr = (addr-0x2000) % 8;
-        write_ppu(addr, data);
+        ppu_write(addr, data);
     }
     else if(addr == 0x4014) {
-        OAM_DMA(data);
+        ppu_write(14, data);
     }
     else if(addr == 0x4016) {
         controller_write(data);

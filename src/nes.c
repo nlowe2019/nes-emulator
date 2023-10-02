@@ -231,7 +231,7 @@ void Update(float elapsed) {
 
             int prev_scanline = scanline;
             for(int j = 0; j < cpu_cycles*3; j++) {
-                Update_PPU();
+                ppu_update();
                 if(prev_scanline > scanline) {
                     i = cycles_per_loop;
                     break;

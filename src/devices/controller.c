@@ -25,7 +25,7 @@ uint8_t controller_read(uint16_t addr) {
                 return 1;
             }
             counter++;
-            printf("button[%d] : %d\n", counter-1, buttons[counter-1]);
+            //printf("button[%d] : %d\n", counter-1, buttons[counter-1]);
             return buttons[counter-1];
         }
     }

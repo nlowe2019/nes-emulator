@@ -2,29 +2,30 @@
 #include <stdint.h>
 
 extern unsigned char ppu_reg[8];
-extern bool pause;
-extern int steps;
 extern int scanline;
 extern int dot;
 extern uint32_t frame_buffer[240][256];
-extern int NMI;
+extern int generate_nmi;
 extern uint16_t ppu_address;
 
-void Update_PPU();
-unsigned char read_ppu(uint16_t addr);
-void write_ppu(uint16_t addr, unsigned char data);
+enum PPU_STATE
+{
+    VISIBLE_FRAME,
+    POST_RENDER,
+    PRE_RENDER,
+};
+
+void ppu_update();
+unsigned char ppu_read(uint16_t reg_num);
+void ppu_write(uint16_t reg_num, uint8_t data);
 void OAM_DMA(uint8_t data);
-
-void Draw_Scanline();
-void Draw_Nametable();
-void Draw_Sprites();
+void draw_name_table_byte();
+void fetch_sprite_data();
+void draw_sprites();
 void clear_OAM();
-void sprite_eval();
-void clear_frame_buffer();
-void dump_OAM();
-void dump_OAM_secondary();
-
-void increment_vert();
-void increment_hori();
-void copy_hori();
-void copy_vert();
+void sprite_evaluation();
+void clear_frame_buffer(); 
+void increment_vertical();
+void increment_horizontal();
+void copy_horizontal();
+void copy_vertical();

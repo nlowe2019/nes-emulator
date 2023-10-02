@@ -44,7 +44,8 @@ enum FLAG
     FLAG_NEGATIVE = 1 << 7,
 };
 
-typedef struct opcode {
+typedef struct opcode 
+{
     unsigned char OPCODE;
     enum ADDRESS_MODE MODE;
     enum INSTRUCTION INSTRUCTION;
